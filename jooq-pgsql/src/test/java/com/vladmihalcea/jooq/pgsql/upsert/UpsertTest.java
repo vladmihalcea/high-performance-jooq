@@ -29,15 +29,12 @@ public class UpsertTest extends AbstractJOOQPostgreSQLIntegrationTest {
             .insertInto(POST).columns(POST.ID, POST.TITLE)
             .values(1L, "High-Performance Java Persistence")
             .execute();
-
-            executeAsync(() -> {
-                upsertPostDetails(sql, 1L, "Alice", LocalDateTime.now());
-            });
-            executeAsync(() -> {
-                upsertPostDetails(sql, 1L, "Bob", LocalDateTime.now());
-            });
-
-            awaitTermination(1, TimeUnit.SECONDS);
+        });
+        doInJOOQ(sql -> {
+            upsertPostDetails(sql, 1L, "Alice", LocalDateTime.now());
+        });
+        doInJOOQ(sql -> {
+            upsertPostDetails(sql, 1L, "Bob", LocalDateTime.now());
         });
     }
 

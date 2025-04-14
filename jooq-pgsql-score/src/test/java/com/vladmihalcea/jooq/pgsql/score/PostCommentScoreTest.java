@@ -171,7 +171,8 @@ public class PostCommentScoreTest extends AbstractJOOQPostgreSQLIntegrationTest 
                            WITH RECURSIVE post_comment_score(id, root_id, post_id,
                               parent_id, review, created_on, score) AS (              
                               SELECT
-                                  id, id, post_id, parent_id, review, created_on, score              FROM post_comment
+                                  id, id, post_id, parent_id, review, created_on, score              
+                              FROM post_comment
                               WHERE post_id = :postId AND parent_id IS NULL
                               UNION ALL
                               SELECT pc.id, pcs.root_id, pc.post_id, pc.parent_id,

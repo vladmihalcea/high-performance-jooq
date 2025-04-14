@@ -2,9 +2,14 @@ package com.vladmihalcea.jooq.pgsql.functions.qa;
 
 import com.vladmihalcea.jooq.pgsql.schema.crud.tables.records.GetUpdatedQuestionsAndAnswersRecord;
 import com.vladmihalcea.jooq.pgsql.util.AbstractJOOQPostgreSQLIntegrationTest;
+import org.hibernate.Session;
+import org.jooq.DSLContext;
 import org.jooq.Result;
+import org.jooq.impl.DSL;
 import org.junit.Test;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -188,6 +193,98 @@ public class QuestionAndAnswerTest extends AbstractJOOQPostgreSQLIntegrationTest
         Question question = questions.get(0);
         assertEquals(2, question.id().intValue());
         assertTrue(question.answers().isEmpty());
+    }
+
+    @Test
+    public void testTx() {
+        Connection connection = null;
+        try {
+            connection = dataSource().getConnection();
+            connection.setAutoCommit(false);
+
+            DSLContext sql = DSL.using(connection, sqlDialect());
+
+            insertData(sql);
+            List<Question> questions = getUpdatedQuestionsAndAnswers(sql);
+
+            connection.commit();
+        } catch (SQLException e) {
+            if(connection != null) {
+                try {
+                    connection.rollback();
+                } catch (SQLException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+            throw new RuntimeException(e);
+        } finally {
+            try {
+                connection.close();
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private void insertData(DSLContext sql) {
+        sql
+            .insertInto(QUESTION)
+            .columns(
+                QUESTION.ID,
+                QUESTION.TITLE,
+                QUESTION.BODY
+            )
+            .values(
+                2L,
+                "How to use the jOOQ MULTISET operator?",
+                "I want to know how I can use the jOOQ MULTISET operator."
+            )
+            .execute();
+    }
+
+    private List<Question> getUpdatedQuestionsAndAnswers(DSLContext sql) {
+        return sql
+            .selectFrom(GET_UPDATED_QUESTIONS_AND_ANSWERS.call())
+            .collect(
+                Collectors.collectingAndThen(
+                    Collectors.toMap(
+                        GetUpdatedQuestionsAndAnswersRecord::getQuestionId,
+                        record -> {
+                            Question question = new Question(
+                                record.getQuestionId(),
+                                record.getQuestionTitle(),
+                                record.getQuestionBody(),
+                                record.getQuestionScore(),
+                                record.getQuestionCreatedOn(),
+                                record.getQuestionUpdatedOn(),
+                                new ArrayList<>()
+                            );
+
+                            Long answerId = record.getAnswerId();
+                            if (answerId != null) {
+                                question.answers().add(
+                                    new Answer(
+                                        answerId,
+                                        record.getAnswerBody(),
+                                        record.getAnswerScore(),
+                                        record.getAnswerAccepted(),
+                                        record.getAnswerCreatedOn(),
+                                        record.getAnswerUpdatedOn()
+                                    )
+                                );
+                            }
+
+                            return question;
+                        },
+                        (Question existing, Question replacement) -> {
+                            existing.answers().addAll(replacement.answers());
+                            return existing;
+                        },
+                        LinkedHashMap::new
+                    ),
+                    (Function<Map<Long, Question>, List<Question>>) map -> new ArrayList<>(map.values())
+                )
+            );
     }
 
     private List<Question> getUpdatedQuestionsAndAnswers() {
