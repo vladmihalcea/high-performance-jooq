@@ -616,7 +616,7 @@ public abstract class AbstractTest {
         }
     }
 
-    protected int count(Connection connection, String sql) {
+    protected int countResultSet(Connection connection, String sql) {
         try {
             try (Statement statement = connection.createStatement()) {
                 statement.setQueryTimeout(1);
