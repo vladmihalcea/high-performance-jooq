@@ -257,6 +257,77 @@ public class WithCTETest extends AbstractJOOQPostgreSQLIntegrationTest {
         assertEquals("SQL:2011", tuples.get(4).get("post_title"));
         assertEquals(5L, ((Number) tuples.get(4).get("comment_id")).longValue());
         assertEquals("SQL:2011 is excellent!", tuples.get(4).get("comment_review"));
+
+        Result<Record5<Long, String, Long, String, Integer>> posts = doInJOOQ(sql -> {
+            // First CTE: p_pc
+            CommonTableExpression<Record5<Long, String, Long, String, Integer>> pPc = name("p_pc")
+                .fields("post_id", "post_title", "comment_id", "comment_review", "comment_count")
+                .as(
+                    select(
+                        POST.ID.as("post_id"),
+                        POST.TITLE.as("post_title"),
+                        POST_COMMENT.ID.as("comment_id"),
+                        POST_COMMENT.REVIEW.as("comment_review"),
+                        count(POST_COMMENT.POST_ID).over(partitionBy(POST_COMMENT.POST_ID)).as("comment_count")
+                    )
+                    .from(POST)
+                    .leftJoin(POST_COMMENT).on(POST.ID.eq(POST_COMMENT.POST_ID))
+                    .where(POST.TITLE.like("SQL%"))
+                );
+
+            // Second CTE: p_pc_r
+            Field<Long> postIdField = field(name("post_id"), Long.class);
+            Field<String> postTitleField = field(name("post_title"), String.class);
+            Field<Long> commentIdField = field(name("comment_id"), Long.class);
+            Field<String> commentReviewField = field(name("comment_review"), String.class);
+            Field<Integer> commentCountField = field(name("comment_count"), Integer.class);
+
+            CommonTableExpression<Record5<Long, String, Long, String, Integer>> pPcR = name("p_pc_r")
+                .fields("post_id", "post_title", "comment_id", "comment_review", "ranking")
+                .as(
+                    select(
+                        postIdField,
+                        postTitleField,
+                        commentIdField,
+                        commentReviewField,
+                        denseRank().over(orderBy(commentCountField.desc())).as("ranking")
+                    )
+                    .from(pPc)
+                );
+
+            // Main query using CTEs
+            return sql
+                .with(pPc)
+                .with(pPcR)
+                .select(
+                    field(name("post_id"), Long.class),
+                    field(name("post_title"), String.class),
+                    field(name("comment_id"), Long.class),
+                    field(name("comment_review"), String.class),
+                    field(name("ranking"), Integer.class)
+                )
+                .from(pPcR)
+                .where(field(name("ranking"), Integer.class).le(2))
+                .orderBy(field(name("post_id")), field(name("comment_id")))
+                .fetch();
+        });
+
+        assertEquals(5, posts.size());
+
+        assertEquals(1L, posts.get(0).get("post_id"));
+        assertEquals("SQL:2016", posts.get(0).get("post_title"));
+        assertEquals(1L, posts.get(0).get("comment_id"));
+        assertEquals("SQL:2016 is great!", posts.get(0).get("comment_review"));
+
+        assertEquals(2L, posts.get(3).get("post_id"));
+        assertEquals("SQL:2011", posts.get(3).get("post_title"));
+        assertEquals(4L, posts.get(3).get("comment_id"));
+        assertEquals("SQL:2011 is great!", posts.get(3).get("comment_review"));
+
+        assertEquals(2L, posts.get(4).get("post_id"));
+        assertEquals("SQL:2011", posts.get(4).get("post_title"));
+        assertEquals(5L, posts.get(4).get("comment_id"));
+        assertEquals("SQL:2011 is excellent!", posts.get(4).get("comment_review"));
     }
 
     @Entity(name = "Post")
